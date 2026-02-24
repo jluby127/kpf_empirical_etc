@@ -3,7 +3,8 @@ import pandas as pd
 import matplotlib.pyplot as pt
 import math
 from scipy.stats import binned_statistic
-from functions.relations import stretched_exp
+from functions.relations import model
+from matplotlib.ticker import LogFormatterSciNotation
 
 
 def gmag_to_EMcountrate(ata, relation1_slope, relation1_intercept, x_fit, y_fit):
@@ -155,7 +156,7 @@ def exptime_per_counts_or_OBthresh(per_g_times, per_g_snrs, per_g_ob, test_gmag,
 
     pt.show()
 
-def plot_indv_counts_to_err_fits(fit_results, nx_fit=200):
+def plot_indv_counts_to_err_fits(fit_results, nx_fit=1000, index=None):
     """
     Plot individual panels with scatter, fitted model lines, and equations.
     
@@ -165,15 +166,27 @@ def plot_indv_counts_to_err_fits(fit_results, nx_fit=200):
         Output from fit_teff_bins(), must contain keys: x, y, params, color, tmin, tmax
     nx_fit : int
         Number of points used to plot the fit line
+    index : int, optional
+        If given, plot only the single panel for fit_results[index]. Otherwise plot all panels.
     """
     
-    nbins = len(fit_results)
-    ncols = math.ceil(np.sqrt(nbins))
-    nrows = math.ceil(nbins / ncols)
+    if index is not None:
+        fit_results = [fit_results[index]]
+        nbins = 1
+        ncols = 1
+        nrows = 1
+        figsize = (8, 6)
+        font_scale = 1.5
+    else:
+        nbins = len(fit_results)
+        ncols = math.ceil(np.sqrt(nbins))
+        nrows = math.ceil(nbins / ncols)
+        figsize = (4*ncols, 4*nrows)
+        font_scale = 1
 
     fig, axes = pt.subplots(
         nrows, ncols,
-        figsize=(4*ncols, 4*nrows),
+        figsize=figsize,
         sharex=True, sharey=True
     )
 
@@ -181,49 +194,46 @@ def plot_indv_counts_to_err_fits(fit_results, nx_fit=200):
 
     for i, res in enumerate(fit_results):
 
-        print(res["x"])
-        print(res["y"])
-        print("--------------------------------")
-        print()
-        print()
-
         axes[i].scatter(res["x"], res["y"],
                         s=10, alpha=0.7,
                         color=res["color"])
 
-        axes[i].axhline(0.3, color='k', linestyle='--')
         axes[i].axhline(0.5, color='gray', linestyle='--')
         axes[i].axhline(1.0, color='gray', linestyle='--')
 
         axes[i].set_title(
             f'{int(res["tmin"])}–{int(res["tmax"])} K '
-            f'(N={len(res["x"])})'
+            f'(N={len(res["x"])})',
+            fontsize=10*font_scale
         )
 
         # --- Add fit line if params exist ---
         if res["params"] is not None and len(res["x"]) > 0:
-            A, tau, beta, C = res["params"]
+            A, alpha, C = res["params"]
             x_fit = np.linspace(res["x"].min(), res["x"].max(), nx_fit)
-            y_fit = stretched_exp(x_fit, A, tau, beta, C)
+            y_fit = model(x_fit, A, alpha, C)
 
             axes[i].plot(x_fit, y_fit,
                          color='k',
                          linewidth=2)
 
             # Add equation to title (after temp range and N count)
-            eq_text = rf"$y = {A:.2e} \exp[-(x/{tau:.2e})^{{{beta:.2f}}}] + {C:.2e}$"
+            eq_text = rf"$y = {A:.2e} \, x^{{-{alpha:.2f}}} + {C:.3f}$"
             axes[i].set_title(
                 f'{int(res["tmin"])}–{int(res["tmax"])} K '
                 f'(N={len(res["x"])})\n{eq_text}',
                 color='k',
-                fontsize=8
+                fontsize=8*font_scale
             )
+        axes[i].set_xscale('log')
+        axes[i].xaxis.set_major_formatter(LogFormatterSciNotation())
+        axes[i].tick_params(axis='both', labelsize=10*font_scale)
 
     for j in range(nbins, len(axes)):
         axes[j].axis("off")
 
-    fig.supxlabel('Counts on L1 File near 652nm')
-    fig.supylabel('CCFERV (m/s)')
+    fig.supxlabel('Counts on L1 File near 652nm', fontsize=12*font_scale)
+    fig.supylabel('CCFERV (m/s)', fontsize=12*font_scale)
     fig.tight_layout()
     pt.show()
     
@@ -246,8 +256,8 @@ def plot_global_counts_to_err_fits(fit_results):
     for res in fit_results:
 
         if res["params"] is not None:
-            A, tau, beta, C = res["params"]
-            y_fit = stretched_exp(x_fit, A, tau, beta, C)
+            A, alpha, C = res["params"]
+            y_fit = model(x_fit, A, alpha, C)
 
             # Plot curve
             ax.plot(
@@ -261,7 +271,7 @@ def plot_global_counts_to_err_fits(fit_results):
             # Format equation for title line
             eq_text = (
                 rf"{int(res['tmin'])}–{int(res['tmax'])} K:  "
-                rf"$y = {A:.2e} \exp[-(x/{tau:.2e})^{{{beta:.2f}}}] + {C:.2e}$"
+                rf"$y = {A:.2e} \, x^{{-{alpha:.2f}}} + {C:.3f}$"
             )
             title_lines.append((eq_text, res["color"]))
 
@@ -281,12 +291,12 @@ def plot_global_counts_to_err_fits(fit_results):
 
     ax.set_xlabel('L1 Counts near 652nm', fontsize=14)
     ax.set_ylabel('CCFERV (m/s)', fontsize=14)
-    ax.set_ylim(0,10)
+    ax.set_ylim(0.1,100)
     ax.tick_params(axis='both', labelsize=14)
     ax.grid(alpha=0.2)
     
-    from matplotlib.ticker import LogFormatterSciNotation
     ax.set_xscale('log')
+    ax.set_yscale('log')
     ax.xaxis.set_major_formatter(LogFormatterSciNotation())
 
     pt.tight_layout()

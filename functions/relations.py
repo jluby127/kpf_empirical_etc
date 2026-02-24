@@ -79,10 +79,13 @@ def build_grids(fits, test_thresh, test_gmag):
         per_g_ob.append(test_thresh)
     return per_g_times, per_g_snrs, per_g_ob, test_threshholds
 
+def model(x, A, alpha, C):
+    return A * x**(-alpha) + C
+
 def stretched_exp(x, A, tau, beta, C):
     return A * np.exp(-(x / tau)**beta) + C
 
-def fit_teff_bins(ata, teff_bins, min_points=30):
+def fit_teff_bins(ata, teff_bins, min_points=30, max_erv=30):
 
     x_all = (ata['SNRSC652'].values)**2
     y_all = ata['CCFERV_MPS'].values
@@ -91,7 +94,7 @@ def fit_teff_bins(ata, teff_bins, min_points=30):
     base_mask = (
         (x_all < 1e6) &
         (x_all > 1e1) &
-        (y_all < 10) &
+        (y_all < max_erv) &
         (teff_all <= max(teff_bins))
     )
 
@@ -124,22 +127,18 @@ def fit_teff_bins(ata, teff_bins, min_points=30):
             y = y[ymask]
 
             # Initial guesses
-            A0 = np.max(y) - np.min(y)
-            tau0 = np.median(x)
-            beta0 = 0.8  # <1 gives longer tail
+            A0 = (np.max(y) - np.min(y)) * np.median(x)**0.3
+            alpha0 = 0.5
             C0 = np.min(y)
 
-#             try:
             popt, _ = curve_fit(
-                stretched_exp,
+                model,
                 x,
                 y,
-                p0=[A0, tau0, beta0, C0],
-                bounds=([0, 0, 0.3, 0], [np.inf, np.inf, 3, np.inf]),
+                p0=[A0, alpha0, C0],
+                bounds=([0, 0.01, 0], [np.inf, 10, np.inf]),
                 maxfev=50000
             )
-#             except RuntimeError:
-#                 popt = None
 
         fit_results.append({
             "tmin": tmin,
