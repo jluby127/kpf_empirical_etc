@@ -1,0 +1,56 @@
+SELECT 
+    l0."ObsID",
+    l0."OBJECT",
+    l0."TARGNAME",
+
+    -- newly added from tsdb_l0
+    l0."EXPTIME",
+    l0."TOTCNTS",
+    l0."TOTCORR",
+    l0."USTHRSH",
+    l0."THRSHLD",
+    l0."THRSBIN",
+    l0."WAVEBNS",
+    l0."GAIAMAG",
+    l0."2MASSMAG",
+    l0."TARGTEFF",
+
+    l0."ELAPSED",
+    l0."DATE-MID",
+    l0."MJD-OBS",
+    l0."MJD-OBS" - 60584 AS "MJD-minus-offset",    
+
+    l2."CCFRV"  * 1000 AS "CCFRV_MPS",    
+    l2rv."CCD1RV" * 1000 AS "CCD1RV_MPS",    
+    l2rv."CCD2RV" * 1000 AS "CCD2RV_MPS",    
+    l2."CCFERV" * 1000 AS "CCFERV_MPS",  
+    l2."CCFBJD",
+
+    l2."DRPTAGL2",
+    l0."USTHRSH",
+    d2."READSPED",
+    d2."NOTJUNK",
+
+    l1f."EMSCCT48",
+    l1f."EMSCCT45",
+    l1f."EMSCCT56",
+    l1f."EMSCCT67",
+    l1f."EMSCCT78",
+    l1f."SNRSC452",
+    l1f."SNRSC548",
+    l1f."SNRSC652",
+    l1f."SNRSC747",
+    l1f."SNRSC852"
+
+FROM tsdb_l0 AS l0
+JOIN tsdb_l2     AS l2     ON l0."ObsID" = l2."ObsID"
+JOIN tsdb_l2rv   AS l2rv   ON l0."ObsID" = l2rv."ObsID"
+JOIN tsdb_l1     AS l1     ON l0."ObsID" = l1."ObsID"
+JOIN tsdb_2d     AS d2     ON l0."ObsID" = d2."ObsID"
+JOIN tsdb_l2ccf  AS l2ccf  ON l0."ObsID" = l2ccf."ObsID"
+LEFT JOIN tsdb_l1_flux AS l1f ON l0."ObsID" = l1f."ObsID"
+
+WHERE
+    d2."READSPED" != 'fast'
+    AND d2."NOTJUNK" = TRUE
+    AND LENGTH(REGEXP_REPLACE(l0."OBJECT", '[0-9]', '', 'g')) <= 2
