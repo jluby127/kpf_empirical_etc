@@ -40,16 +40,12 @@ def get_EMcounts_to_Scicounts_slope_intercept(ata):
     relation2_slope2, relation2_intercept2 = coeff_median_xx2
     return relation2_slope2, 0.0 # intercept must be zero for log fits. Also it *should* be zero....no counts on EM should be no counts on Sci.
 
-def compute_exposure_info(fits, gmag, thresh):
-    # mag_to_EMcounts_slope = -0.326
-    # mag_to_EMcounts_intercept = 8.354
-    # EMcounts_to_SCIcounts_slope = 0.0007321
-    # EMcounts_to_SCIcounts_intercept = 605
+def compute_exposure_info(equations, gmag, thresh):
 
-    mag_to_EMcounts_slope = fits['mag_to_EMcounts_slope']
-    mag_to_EMcounts_intercept = fits['mag_to_EMcounts_intercept']
-    EMcounts_to_SCIcounts_slope = fits['EMcounts_to_SCIcounts_slope']
-    EMcounts_to_SCIcounts_intercept = fits['EMcounts_to_SCIcounts_intercept']
+    mag_to_EMcounts_slope = equations['mag_to_EMcounts_slope']
+    mag_to_EMcounts_intercept = equations['mag_to_EMcounts_intercept']
+    EMcounts_to_SCIcounts_slope = equations['EMcounts_to_SCIcounts_slope']
+    EMcounts_to_SCIcounts_intercept = equations['EMcounts_to_SCIcounts_intercept']
     
     thresh_raw = (thresh*10**9) #EM cuts off at MegaPhotons per Angstrom. Each EM band is 100nm wide = 1000 Angstrom. Including the "Mega" together this makes 10**9
     
@@ -151,3 +147,71 @@ def fit_teff_bins(ata, teff_bins, min_points=30, max_erv=30):
 
     return fit_results
 
+def predict_rv_uncertainty(fit_results, temperature, mycounts):
+    """
+    Predict y-value (CCFERV) from x (mycounts) and a given temperature,
+    using the appropriate temperature bin fit.
+
+    Parameters
+    ----------
+    fit_results : list of dicts
+        Output of fit_teff_bins()
+    temperature : float
+        Temperature (TARGTEFF) to choose bin
+    mycounts : float
+        Value to plug into x = (SNRSC652)^2
+
+    Returns
+    -------
+    float
+        Predicted y-value, rounded to 2 decimals
+    """
+
+    # Find the first bin that contains the temperature
+    for res in fit_results:
+        if res["tmin"] <= temperature < res["tmax"] or (
+            temperature == res["tmax"] and res == fit_results[-1]
+        ):
+            if res["params"] is None:
+                raise ValueError("No fit available for this bin.")
+            A, alpha, C = res["params"]
+            x_val = mycounts**2
+            y_val = model(x_val, A, alpha, C)
+            return np.round(y_val, 2)
+
+    # If no bin matches
+    raise ValueError("Temperature not within any bin range.")
+    
+def compute_exptime_from_rv_linear(RV_target, Teff, Gmag, fit_results, equations):
+    """
+    Compute exposure time and threshold needed to reach a desired RV uncertainty
+    for a star of given Teff and G magnitude, using the RV-L1 counts fit
+    and recompute_exptime2 linear relationships.
+    """
+
+    # --- Step 1: select Teff bin ---
+    for res in fit_results:
+        if res["tmin"] <= Teff < res["tmax"] or (
+            Teff == res["tmax"] and res == fit_results[-1]
+        ):
+            if res["params"] is None:
+                raise ValueError("No RV fit available for this Teff bin.")
+            A, alpha, C = res["params"]
+            break
+    else:
+        raise ValueError("Temperature not within any bin range.")
+
+    if RV_target <= C:
+        raise ValueError("RV_target must be greater than C for this fit.")
+
+    # Inverse of y = A*x**(-alpha) + C  =>  x = ((RV_target - C)/A)**(-1/alpha)
+    L1_squared = ((RV_target - C) / A)**(-1 / alpha)
+    thresh_raw = (L1_squared - equations['EMcounts_to_SCIcounts_intercept']) / equations['EMcounts_to_SCIcounts_slope']
+    lograte = equations['mag_to_EMcounts_slope']*Gmag + equations['mag_to_EMcounts_intercept'] 
+    rate = (10**lograte)
+    exptime = thresh_raw / rate
+    threshOB = np.round(thresh_raw / 1e9,3)
+    
+    time, spectrum_counts_g = compute_exposure_info(equations, Gmag, threshOB)
+
+    return int(exptime), threshOB, int(spectrum_counts_g)
